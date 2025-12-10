@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="../ApsStudy.Server/ApsStudy.Server.csproj" />
+  <Project Path="../ApsStudy.Shared/ApsStudy.Shared.csproj" />
+  <Project Path="ApsStudy.Client/ApsStudy.Client.csproj" />
+</Solution>

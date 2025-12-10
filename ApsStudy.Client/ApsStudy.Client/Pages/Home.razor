@@ -1,0 +1,100 @@
+﻿@page "/"
+@using ApsStudy.Shared.DTOs
+@using System.Net.Http.Headers
+@using System.Text.Json
+@inject HttpClient Http
+
+<PageTitle>APS Uploader</PageTitle>
+
+<div class="container mt-5">
+    <h1>🚀 Autodesk APS 파일 업로더</h1>
+    <hr />
+
+    <button class="btn btn-info mb-3" @onclick="CheckToken">🔑 토큰 잘 받아지나 확인</button>
+    <p><strong>현재 토큰 상태:</strong> @tokenStatus</p>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            📂 Revit 모델 업로드
+        </div>
+        <div class="card-body">
+            <InputFile OnChange="@UploadFile" class="form-control mb-3" />
+
+            @if ( !string.IsNullOrEmpty( uploadStatus ) )
+            {
+                <div class="alert @statusClass">@uploadStatus</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string tokenStatus = "아직 확인 안 함";
+    private string uploadStatus = "";
+    private string statusClass = "alert-secondary";
+
+    // 포트번호 확인 필수!
+    private const string ServerUrl = "https://localhost:7107";
+
+    // 1. 토큰 확인 함수
+    private async Task CheckToken()
+    {
+        try
+        {
+            // 컨트롤러의 GetToken() 호출
+            var response = await Http.GetFromJsonAsync<JsonElement>( $"{ServerUrl}/api/aps/token" );
+            tokenStatus = "발급 성공! (앞자리: " + response.GetProperty( "accessToken" ).ToString().Substring( 0, 10 ) + "...)";
+        }
+        catch ( Exception ex )
+        {
+            tokenStatus = "실패: " + ex.Message;
+        }
+    }
+
+    // 2. 파일 업로드 함수
+    private async Task UploadFile( InputFileChangeEventArgs e )
+    {
+        var file = e.File;
+        long maxFileSize = 1024 * 1024 * 100; // 100MB
+
+        try
+        {
+            uploadStatus = "⏳ 업로드 중...";
+            statusClass = "alert-warning";
+
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent( file.OpenReadStream( maxFileSize ) );
+
+            // [수정] 브라우저가 ContentType을 모르면(빈칸이면) 강제로 기본값 설정
+            var contentType = file.ContentType;
+            if ( string.IsNullOrWhiteSpace( contentType ) )
+            {
+                contentType = "application/octet-stream"; // "그냥 이진 파일임"이라는 뜻
+            }
+
+            // 이제 안전하게 넣음
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue( contentType );
+
+            content.Add( fileContent, "file", file.Name );
+
+            var response = await Http.PostAsync( $"{ServerUrl}/api/aps/upload", content );
+
+            if ( response.IsSuccessStatusCode )
+            {
+                var result = await response.Content.ReadFromJsonAsync<UploadResponseDto>();
+                uploadStatus = $"✅ {result?.Message} ({result?.StoredFileName})";
+                statusClass = "alert-success";
+            }
+            else
+            {
+                uploadStatus = $"❌ 실패: {response.StatusCode}";
+                statusClass = "alert-danger";
+            }
+        }
+        catch ( Exception ex )
+        {
+            uploadStatus = $"❌ 에러: {ex.Message}";
+            statusClass = "alert-danger";
+        }
+    }
+}
