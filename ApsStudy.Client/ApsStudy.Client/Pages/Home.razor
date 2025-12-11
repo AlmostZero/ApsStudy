@@ -7,15 +7,16 @@
 <PageTitle>APS Uploader</PageTitle>
 
 <div class="container mt-5">
-    <h1>🚀 Autodesk APS Model Uploader</h1>
+    <h1>Autodesk APS Model Uploader</h1>
     <hr />
 
-    <button class="btn btn-info mb-3" @onclick="CheckToken">🔑 토큰 잘 받아지나 확인</button>
-    <p><strong>현재 토큰 상태:</strong> @tokenStatus</p>
+    <button class="btn btn-info mb-3" @onclick="CheckToken">Token発行</button>
+    <div> <p><strong>Status:</strong> @tokenStatus</p></div>
+
 
     <div class="card">
         <div class="card-header bg-primary text-white">
-            📂 Revit 모델 업로드
+            Rvt Uploader
         </div>
         <div class="card-body">
             <InputFile OnChange="@UploadFile" class="form-control mb-3" />
@@ -29,7 +30,7 @@
 </div>
 
 @code {
-    private string tokenStatus = "아직 확인 안 함";
+    private string tokenStatus = "未確認";
     private string uploadStatus = "";
     private string statusClass = "alert-secondary";
 
@@ -43,11 +44,12 @@
         {
             // 컨트롤러의 GetToken() 호출
             var response = await Http.GetFromJsonAsync<JsonElement>( $"{ServerUrl}/api/aps/token" );
-            tokenStatus = "발급 성공! (앞자리: " + response.GetProperty( "accessToken" ).ToString().Substring( 0, 10 ) + "...)";
+            //tokenStatus = "発行完了 (" + response.GetProperty( "accessToken" ).ToString().Substring( 0, 10 ) + "...)";
+            tokenStatus = response.GetProperty( "accessToken" ).ToString();
         }
         catch ( Exception ex )
         {
-            tokenStatus = "실패: " + ex.Message;
+            tokenStatus = "失敗: " + ex.Message;
         }
     }
 
@@ -59,7 +61,7 @@
 
         try
         {
-            uploadStatus = "⏳ 업로드 중...";
+            uploadStatus = "アップロード中...";
             statusClass = "alert-warning";
 
             using var content = new MultipartFormDataContent();
@@ -87,13 +89,13 @@
             }
             else
             {
-                uploadStatus = $"❌ 실패: {response.StatusCode}";
+                uploadStatus = $"❌ 失敗: {response.StatusCode}";
                 statusClass = "alert-danger";
             }
         }
         catch ( Exception ex )
         {
-            uploadStatus = $"❌ 에러: {ex.Message}";
+            uploadStatus = $"❌ Error: {ex.Message}";
             statusClass = "alert-danger";
         }
     }

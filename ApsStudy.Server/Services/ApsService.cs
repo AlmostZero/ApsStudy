@@ -135,5 +135,22 @@ namespace ApsStudy.Server.Services
                 throw new Exception( $"재고 조사 실패: {e.Message}" );
             }
         }
+
+        // [추가] 파일 삭제 구현
+        public async Task DeleteFile( string objectName )
+        {
+            var bucketKey = await EnsureBucketExists();
+            var token = await GetAccessToken();
+
+            try
+            {
+                // OSS SDK: DeleteObjectAsync(버킷키, 파일이름, 토큰)
+                await _ossClient.DeleteObjectAsync( bucketKey, objectName, accessToken: token );
+            }
+            catch ( Autodesk.Oss.OssApiException e )
+            {
+                throw new Exception( $"삭제 실패: {e.Message}" );
+            }
+        }
     }
 }

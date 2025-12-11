@@ -14,5 +14,8 @@ namespace ApsStudy.Server.Services
 
         Task<List<ObjectDetails>> GetBucketObjects();
 
+        // [추가] 설거지 (파일 삭제)
+        Task DeleteFile( string objectName );
+
     }
 }

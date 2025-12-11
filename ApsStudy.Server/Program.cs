@@ -31,7 +31,9 @@ namespace ApsStudy.Server
                 options.MultipartBodyLengthLimit = 100 * 1024 * 1024; // 100MB
             } );
 
+
             builder.Services.AddScoped<IApsService, ApsService>();
+            builder.Services.AddScoped<IDerivativeService, DerivativeService>();
 
             var app = builder.Build();
 
