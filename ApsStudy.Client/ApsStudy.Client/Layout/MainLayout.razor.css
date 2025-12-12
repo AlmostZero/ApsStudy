@@ -1,81 +1,73 @@
+﻿/* 전체 페이지 레이아웃 */
 .page {
     position: relative;
     display: flex;
-    flex-direction: column;
+    flex-direction: row; /* 항상 가로 배치 */
+    height: 100vh; /* 전체 화면 높이 */
+    overflow: hidden; /* 스크롤바 생김 방지 */
 }
 
-main {
-    flex: 1;
-}
-
+/* [수정] 사이드바 디자인 및 애니메이션 */
 .sidebar {
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    /* 1. 보라색 그라데이션 삭제 -> 깔끔한 다크 그레이 단색으로 변경 */
+    background-color: #212529;
+    /* 2. 사이드바 너비 및 애니메이션 설정 */
+    width: 250px; /* 기본 너비 */
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    z-index: 100; /* 메인 화면 위에 오도록 */
+    /* 부드러운 움직임을 위한 트랜지션 (0.3초 동안 스르륵) */
+    transition: all 0.3s ease-in-out;
+    /* 내용이 넘치면 숨김 (닫힐 때 깔끔하게) */
+    overflow-x: hidden;
+    white-space: nowrap; /* 텍스트 줄바꿈 방지 */
 }
 
+    /* [신규] 사이드바가 '닫힘(closed)' 상태일 때 스타일 */
+    .sidebar.closed {
+        width: 0; /* 너비를 0으로 만들어서 숨김 */
+        padding: 0; /* 내부 여백도 제거 */
+    }
+
+/* 메인 컨텐츠 영역 */
+main {
+    flex: 1; /* 남은 공간 모두 차지 */
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Flex 아이템이 너무 커지는 것 방지 */
+    transition: all 0.3s ease-in-out; /* 사이드바 움직임에 맞춰 같이 부드럽게 */
+}
+
+/* 상단 툴바 디자인 */
 .top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
-    justify-content: flex-end;
+    /* 보라색 느낌 제거 -> 깔끔한 흰색 배경 */
+    background-color: #ffffff;
+    border-bottom: 1px solid #dee2e6;
+    justify-content: flex-start; /* 왼쪽 정렬 (토글 버튼 때문) */
     height: 3.5rem;
     display: flex;
     align-items: center;
+    padding-left: 1rem; /* 왼쪽 여백 추가 */
+    z-index: 1;
 }
 
+    /* 상단 툴바 링크 스타일 */
     .top-row ::deep a, .top-row ::deep .btn-link {
         white-space: nowrap;
         margin-left: 1.5rem;
         text-decoration: none;
+        color: #212529; /* 글자색도 다크하게 */
     }
 
-    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
-        text-decoration: underline;
-    }
+        .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
+            text-decoration: underline;
+            color: #0d6efd; /* 호버 시 파란색 */
+        }
 
-    .top-row ::deep a:first-child {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
+/* 모바일 화면 대응 (선택사항) */
 @media (max-width: 640.98px) {
-    .top-row {
-        justify-content: space-between;
-    }
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        margin-left: 0;
-    }
-}
-
-@media (min-width: 641px) {
-    .page {
-        flex-direction: row;
-    }
-
     .sidebar {
-        width: 250px;
-        height: 100vh;
-        position: sticky;
-        top: 0;
-    }
-
-    .top-row {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-
-    .top-row.auth ::deep a:first-child {
-        flex: 1;
-        text-align: right;
-        width: 0;
-    }
-
-/*    .top-row, article {
-        padding-left: 2rem !important;
-        padding-right: 1.5rem !important;
-    }*/
-    .top-row {
-        padding-left: 2rem !important;
-        padding-right: 1.5rem !important;
+        position: absolute; /* 모바일에서는 메인 화면 위에 덮어씌움 */
     }
 }

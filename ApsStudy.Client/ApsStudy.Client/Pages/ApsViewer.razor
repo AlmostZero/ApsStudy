@@ -6,115 +6,71 @@
 
 <PageTitle>APS Viewer</PageTitle>
 
-<div class="container-fluid h-100 p-0">
-    <div class="row h-100 g-0">
-        <div class="col-md-3 border-end bg-light p-3 d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4 class="m-0">📂 파일함</h4>
-                <button class="btn btn-primary btn-sm" @onclick="LoadFiles" title="목록 새로고침">
-                    🔄
-                </button>
-            </div>
+<div class="container-fluid h-100 p-0 d-flex flex-column">
 
-            @if ( files == null )
+    <div class="d-flex align-items-center gap-2 p-2 bg-white border-bottom" style="height: 50px; flex-shrink: 0;">
+        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadFiles">
+            リスト更新
+        </button>
+
+        <select class="form-select form-select-sm" style="max-width: 400px;" @bind="selectedUrn">
+            <option value="">-- モデルを選択してください --</option>
+            @if ( files != null )
             {
-                <p class="text-center mt-3">📡 서버 통신 중...</p>
-            }
-            else if ( files.Count == 0 )
-            {
-                <p class="text-center mt-3 text-muted">파일이 없습니다.<br>Postman으로 업로드 해보세요.</p>
-            }
-            else
-            {
-                <div class="list-group overflow-auto" style="flex:1;">
-                    @foreach ( var file in files )
-                    {
-                        <div class="list-group-item">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <h6 class="mb-0 fw-bold text-truncate" title="@file.FileName" style="max-width: 65%;">
-                                    📄 @file.FileName
-                                </h6>
-                                <div>
-                                    <button class="btn btn-outline-dark btn-sm me-1" @onclick="() => DebugManifest( file.Urn )" title="F12 콘솔에 상세 로그 찍기">
-                                        🐞
-                                    </button>
-                                    <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteFile( file.FileName )" title="파일 삭제">
-                                        🗑️
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="btn-group w-100">
-                                @if ( file.TranslationStatus == "success" )
-                                {
-                                    <button class="btn btn-success btn-sm" @onclick="() => ViewModel( file.Urn )">
-                                        👁️ 바로 보기
-                                    </button>
-                                }
-                                else if ( file.TranslationStatus == "inprogress" )
-                                {
-                                    <button class="btn btn-secondary btn-sm" disabled>
-                                        ⏳ 변환 중...
-                                    </button>
-                                }
-                                else if ( file.TranslationStatus == "failed" )
-                                {
-                                    <button class="btn btn-danger btn-sm disabled">
-                                        ❌ 변환 실패
-                                    </button>
-                                }
-                                else if ( file.TranslationStatus == "checking" )
-                                {
-                                    <button class="btn btn-light btn-sm disabled">
-                                        🔍 확인 중...
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button class="btn btn-warning btn-sm" @onclick="() => RequestTranslate( file.ObjectId )">
-                                        🍳 변환하기
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-
-        <div class="col-md-9 p-0 position-relative">
-
-            <div id="forgeViewer"
-                 style="width:100%; height:100%; position:absolute; top:0; left:0; overflow:hidden; background-color:#333;">
-
-                @if ( !string.IsNullOrEmpty( statusMessage ) )
+                @foreach ( var file in files )
                 {
-                    <div class="d-flex align-items-center justify-content-center h-100 text-white"
-                         style="position:absolute; top:0; left:0; width:100%; z-index:99; pointer-events:none;">
-                        <div style="pointer-events:auto;">
-                            @if ( statusMessage == "준비 완료" )
-                            {
-                                <h3>👈 왼쪽에서 파일을 선택해주세요</h3>
-                            }
-                            else
-                            {
-                                <h5>@statusMessage</h5>
-                            }
-                        </div>
-                    </div>
+                    <option value="@file.Urn">@file.FileName</option>
                 }
+            }
+        </select>
 
+        <button class="btn btn-primary btn-sm px-4" @onclick="LoadSelectedModel" disabled="@string.IsNullOrEmpty( selectedUrn )">
+            モデル表示
+        </button>
+
+        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="DeleteSelectedFile" disabled="@string.IsNullOrEmpty( selectedUrn )">
+            ファイル削除
+        </button>
+    </div>
+
+    <div class="flex-grow-1 position-relative" style="overflow: hidden;">
+
+        <div class="d-flex h-100 w-100" id="viewerContainer">
+
+            <div id="viewer2d" style="width:calc(50% - 5px); height:100%; position:relative; background-color:white;">
+                <div class="position-absolute text-white px-2 py-1" style="top:0; left:0; z-index:10; font-size:12px; background:rgba(0,0,0,0.5);">
+                    2D シート (図面)
+                </div>
             </div>
+
+            <div id="viewerGutter" class="gutter-col">
+                <div class="gutter-handle"></div>
+            </div>
+
+            <div id="viewer3d" style="width:calc(50% - 5px); height:100%; position:relative; background-color:white;">
+                <div class="position-absolute text-white px-2 py-1" style="top:0; left:0; z-index:10; font-size:12px; background:rgba(0,0,0,0.5);">
+                    3D ビュー (モデル)
+                </div>
+            </div>
+
         </div>
+
+        @if ( !string.IsNullOrEmpty( statusMessage ) )
+        {
+            <div class="d-flex align-items-center justify-content-center h-100 text-white"
+                 style="position:absolute; top:0; left:0; width:100%; z-index:99; pointer-events:none; background-color: rgba(0,0,0,0.6);">
+                <div style="pointer-events:auto;">
+                    <h5>@statusMessage</h5>
+                </div>
+            </div>
+        }
     </div>
 </div>
 
 @code {
-    // Shared 프로젝트에 있는 DTO 사용
     private List<BucketObjectDto>? files;
-    private string statusMessage = "준비 완료";
-
-    // [주의] 형님 포트 번호 확인 (launchSettings.json)
+    private string selectedUrn = "";
+    private string statusMessage = "";
     private const string ServerUrl = "https://localhost:7107";
 
     protected override async Task OnInitializedAsync()
@@ -122,130 +78,82 @@
         await LoadFiles();
     }
 
-    // 1. 파일 목록 불러오기 + 상태 체크
+    // 렌더링이 끝난 후 JS 연결 (리사이즈 바 활성화)
+    protected override async Task OnAfterRenderAsync( bool firstRender )
+    {
+        if ( firstRender )
+        {
+            // 화면이 처음 그려지면 리사이즈 기능을 켭니다.
+            await JSRuntime.InvokeVoidAsync( "enableResizer", "viewer2d", "viewer3d", "viewerGutter" );
+        }
+    }
+
     private async Task LoadFiles()
     {
         try
         {
             files = await Http.GetFromJsonAsync<List<BucketObjectDto>>( $"{ServerUrl}/api/aps/bucket" );
-            StateHasChanged(); // 목록 먼저 표시
-
-            // 각 파일 상태 전수조사 (URN 기반)
-            foreach ( var file in files )
-            {
-                try
-                {
-                    // [중요] objectId 대신 urn 사용! (인코딩 문제 해결)
-                    var res = await Http.GetFromJsonAsync<JsonElement>( $"{ServerUrl}/api/derivative/status?urn={file.Urn}" );
-                    file.TranslationStatus = res.GetProperty( "status" ).ToString();
-                    StateHasChanged();
-                }
-                catch
-                {
-                    file.TranslationStatus = "n/a";
-                }
-            }
+            StateHasChanged();
         }
         catch ( Exception ex )
         {
-            statusMessage = $"목록 로드 실패: {ex.Message}";
+            await JSRuntime.InvokeVoidAsync( "alert", $"リストの読み込みに失敗しました: {ex.Message}" );
         }
     }
 
-    // 2. 파일 삭제
-    private async Task DeleteFile( string fileName )
+    private async Task LoadSelectedModel()
     {
-        bool confirmed = await JSRuntime.InvokeAsync<bool>( "confirm", $"'{fileName}' 파일을 영구 삭제하시겠습니까?" );
-        if ( !confirmed ) return;
+        if ( string.IsNullOrEmpty( selectedUrn ) ) return;
 
         try
         {
-            var response = await Http.DeleteAsync( $"{ServerUrl}/api/aps/bucket/{fileName}" );
-            if ( response.IsSuccessStatusCode )
-            {
-                await LoadFiles(); // 목록 새로고침
-                await JSRuntime.InvokeVoidAsync( "alert", "삭제되었습니다." );
-            }
-            else
-            {
-                await JSRuntime.InvokeVoidAsync( "alert", "삭제 실패!" );
-            }
-        }
-        catch ( Exception ex )
-        {
-            await JSRuntime.InvokeVoidAsync( "alert", $"에러: {ex.Message}" );
-        }
-    }
-
-    // 3. 변환 요청 (수동)
-    private async Task RequestTranslate( string objectId )
-    {
-        var target = files.FirstOrDefault( f => f.ObjectId == objectId );
-        if ( target != null ) { target.TranslationStatus = "inprogress"; StateHasChanged(); }
-
-        try
-        {
-            var response = await Http.PostAsJsonAsync( $"{ServerUrl}/api/derivative/translate", objectId );
-            if ( response.IsSuccessStatusCode )
-            {
-                await JSRuntime.InvokeVoidAsync( "alert", "변환 요청 성공! 잠시 후 [새로고침] 하세요." );
-            }
-            else
-            {
-                var msg = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync( "alert", $"요청 실패: {msg}" );
-                if ( target != null ) target.TranslationStatus = "failed";
-            }
-        }
-        catch ( Exception ex )
-        {
-            await JSRuntime.InvokeVoidAsync( "alert", $"에러: {ex.Message}" );
-        }
-    }
-
-    // 4. 뷰어 실행 (JS 호출)
-    private async Task ViewModel( string urn )
-    {
-        try
-        {
-            statusMessage = "토큰 발급 중...";
+            statusMessage = "トークン取得中...";
             StateHasChanged();
 
             var tokenRes = await Http.GetFromJsonAsync<JsonElement>( $"{ServerUrl}/api/aps/token" );
             var token = tokenRes.GetProperty( "accessToken" ).ToString();
 
-            statusMessage = "뷰어 로딩 중...";
+            statusMessage = "ビューアー起動中...";
             StateHasChanged();
 
-            // wwwroot/js/viewerHelper.js 의 launchViewer 호출
-            await JSRuntime.InvokeVoidAsync( "launchViewer", "forgeViewer", urn, token );
+            await JSRuntime.InvokeVoidAsync( "launchDualViewer", "viewer2d", "viewer3d", selectedUrn, token );
 
-            statusMessage = ""; // 메시지 지움 (화면 가리니까)
+            statusMessage = "";
         }
         catch ( Exception ex )
         {
-            statusMessage = $"뷰어 실행 실패: {ex.Message}";
+            statusMessage = "";
+            await JSRuntime.InvokeVoidAsync( "alert", $"ビューアーの起動に失敗しました: {ex.Message}" );
         }
     }
 
-    // 5. [신규] 상세 Manifest 디버그 (F12 콘솔 출력)
-    private async Task DebugManifest( string urn )
+    private async Task DeleteSelectedFile()
     {
+        if ( string.IsNullOrEmpty( selectedUrn ) ) return;
+
+        var targetFile = files?.FirstOrDefault( f => f.Urn == selectedUrn );
+        if ( targetFile == null ) return;
+
+        bool confirmed = await JSRuntime.InvokeAsync<bool>( "confirm", $"'{targetFile.FileName}' を本当に削除しますか？" );
+        if ( !confirmed ) return;
+
         try
         {
-            await JSRuntime.InvokeVoidAsync( "console.log", $"🔍 부검 시작 (URN: {urn})" );
-
-            // 상세 정보 API 호출 (URN 사용)
-            var manifest = await Http.GetFromJsonAsync<JsonElement>( $"{ServerUrl}/api/derivative/manifest?urn={urn}" );
-
-            // 콘솔에 객체 덤프
-            await JSRuntime.InvokeVoidAsync( "console.log", manifest );
-            await JSRuntime.InvokeVoidAsync( "alert", "브라우저 개발자 도구(F12) -> Console 탭을 확인하세요!" );
+            var response = await Http.DeleteAsync( $"{ServerUrl}/api/aps/bucket/{targetFile.FileName}" );
+            if ( response.IsSuccessStatusCode )
+            {
+                await JSRuntime.InvokeVoidAsync( "alert", "削除しました。" );
+                selectedUrn = "";
+                await LoadFiles();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync( "alert", "削除に失敗しました。" );
+            }
         }
         catch ( Exception ex )
         {
-            await JSRuntime.InvokeVoidAsync( "console.error", ex.Message );
-            await JSRuntime.InvokeVoidAsync( "alert", "Manifest 조회 실패 (아직 변환 요청 안 했을 수도 있음)" );
+            await JSRuntime.InvokeVoidAsync( "alert", $"エラー: {ex.Message}" );
         }
     }
 }

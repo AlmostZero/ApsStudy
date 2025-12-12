@@ -1,44 +1,40 @@
 ﻿<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">大成建設札幌支店技術室</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
     </div>
 </div>
 
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+<div class="nav-scrollable">
     <nav class="flex-column">
+
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> モデルアップロード
             </NavLink>
         </div>
-        <div class="nav-item px-3">
+
+@*         <div class="nav-item px-3">
             <NavLink class="nav-link" href="counter">
                 <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
             </NavLink>
         </div>
+
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="weather">
                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
             </NavLink>
-        </div>
+        </div> *@
+
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="aps-viewer">
-                <span class="bi bi-app-nav-menu" aria-hidden="true"></span> APS Viewer
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> 型枠 VIEWER
             </NavLink>
         </div>
+
     </nav>
 </div>
 
 @code {
-    private bool collapseNavMenu = true;
-
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
-
-    private void ToggleNavMenu()
-    {
-        collapseNavMenu = !collapseNavMenu;
-    }
+    // 아무것도 없습니다.
+    // 접었다 폈다 하는 건 MainLayout 형님이 다 알아서 합니다.
 }
