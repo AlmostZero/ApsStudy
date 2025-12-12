@@ -8,13 +8,16 @@ namespace ApsStudy.Shared.DTOs
 {
     public class BucketObjectDto
     {
-        public string FileName { get; set; }
-        public string ObjectId { get; set; }
-        public string Urn { get; set; }
+        public string ObjectId { get; set; } = string.Empty;
+        public string Urn { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
 
-        // [중요] 이건 UI에서 쓸 거라 서버는 몰라도 되지만, 
-        // 클라이언트 편의를 위해 여기 넣어두면 편합니다.
-        // (서버에서 내려줄 땐 null이나 기본값이었다가 클라이언트가 채웁니다.)
-        public string TranslationStatus { get; set; } = "checking";
+        // [추가] 파일 크기 (바이트 단위)
+        public long Size { get; set; }
+
+        // [추가] 업로드 날짜 (문자열로 받음)
+        public string UploadedDate { get; set; } = string.Empty;
+
+        public string TranslationStatus { get; set; } = "n/a";
     }
 }

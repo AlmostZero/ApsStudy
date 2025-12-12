@@ -1,0 +1,217 @@
+﻿@page "/"
+@page "/model-uploader"
+@using ApsStudy.Shared.DTOs
+@using System.Net.Http.Headers
+@using System.Text.Json
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Model Manager</PageTitle>
+
+<div class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-end mb-3">
+        <div>
+            <h3 class="fw-bold text-dark m-0">モデル管理</h3>
+            <span class="text-secondary small">Revitモデル(.rvt)のアップロードと管理</span>
+        </div>
+
+        <button class="btn btn-sm btn-outline-dark" @onclick="LoadFiles">
+            リスト更新
+        </button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body bg-light rounded d-flex align-items-center justify-content-between p-4">
+
+            <div class="d-flex align-items-center gap-3 w-100">
+                <label class="fw-bold text-secondary" style="white-space: nowrap;">新規アップロード</label>
+
+                <InputFile OnChange="@UploadFile" class="form-control" accept=".rvt" style="max-width: 500px;" />
+
+                @if ( isLoading )
+                {
+                    <div class="d-flex align-items-center text-primary">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        <small>処理中...</small>
+                    </div>
+                }
+            </div>
+
+        </div>
+        @if ( !string.IsNullOrEmpty( uploadStatus ) )
+        {
+            <div class="card-footer border-0 @statusClass">
+                <small>@uploadStatus</small>
+            </div>
+        }
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <h6 class="m-0 fw-bold text-dark">クラウド保存済みファイル一覧</h6>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 50px;">No.</th>
+                        <th>ファイル名</th>
+                        <th style="width: 120px;">サイズ</th>
+                        <th style="width: 150px;">URN (ID)</th>
+                        <th style="width: 100px; text-align: right;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if ( files == null )
+                    {
+                        <tr><td colspan="5" class="text-center py-5 text-muted">読み込み中...</td></tr>
+                    }
+                    else if ( files.Count == 0 )
+                    {
+                        <tr><td colspan="5" class="text-center py-5 text-muted">保存されたファイルはありません。</td></tr>
+                    }
+                    else
+                    {
+                        @foreach ( var (file, index) in files.Select( ( v, i ) => (v, i) ) )
+                        {
+                            <tr>
+                                <td class="text-secondary">@(index + 1)</td>
+                                <td class="fw-bold text-dark">
+                                    @file.FileName
+                                </td>
+                                <td class="text-secondary small">
+                                    @FormatBytes( file.Size )
+                                </td>
+                                <td>
+                                    <button class="btn btn-link btn-sm text-decoration-none p-0" @onclick="() => CopyToClipboard( file.Urn )">
+                                        URNコピー
+                                    </button>
+                                </td>
+                                <td style="text-align: right;">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteFile( file )">
+                                        削除
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<BucketObjectDto>? files;
+    private string uploadStatus = "";
+    private string statusClass = "";
+    private bool isLoading = false;
+    private const string ServerUrl = "https://localhost:7107";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFiles();
+    }
+
+    private async Task LoadFiles()
+    {
+        try
+        {
+            files = await Http.GetFromJsonAsync<List<BucketObjectDto>>( $"{ServerUrl}/api/aps/bucket" );
+        }
+        catch ( Exception ex )
+        {
+            uploadStatus = $"リスト取得エラー: {ex.Message}";
+        }
+    }
+
+    private async Task UploadFile( InputFileChangeEventArgs e )
+    {
+        var file = e.File;
+        // 100MB 제한
+        long maxFileSize = 1024 * 1024 * 100;
+
+        isLoading = true;
+        uploadStatus = "アップロード及び変換処理を開始しました...";
+        statusClass = "bg-light text-info"; // 진행 중 색상
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent( file.OpenReadStream( maxFileSize ) );
+            var contentType = string.IsNullOrWhiteSpace( file.ContentType ) ? "application/octet-stream" : file.ContentType;
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue( contentType );
+            content.Add( fileContent, "file", file.Name );
+
+            var response = await Http.PostAsync( $"{ServerUrl}/api/aps/upload", content );
+
+            if ( response.IsSuccessStatusCode )
+            {
+                var result = await response.Content.ReadFromJsonAsync<UploadResponseDto>();
+                uploadStatus = $"完了: {result?.Message}";
+                statusClass = "bg-success text-white"; // 성공 시 녹색 배경
+                await LoadFiles();
+            }
+            else
+            {
+                uploadStatus = $"失敗: {response.StatusCode}";
+                statusClass = "bg-danger text-white";
+            }
+        }
+        catch ( Exception ex )
+        {
+            uploadStatus = $"エラー: {ex.Message}";
+            statusClass = "bg-danger text-white";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteFile( BucketObjectDto file )
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>( "confirm", $"ファイル '{file.FileName}' を削除しますか？" );
+        if ( !confirmed ) return;
+
+        try
+        {
+            var response = await Http.DeleteAsync( $"{ServerUrl}/api/aps/bucket/{file.FileName}" );
+            if ( response.IsSuccessStatusCode )
+            {
+                await LoadFiles();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync( "alert", "削除に失敗しました。" );
+            }
+        }
+        catch ( Exception ex )
+        {
+            await JSRuntime.InvokeVoidAsync( "alert", $"エラー: {ex.Message}" );
+        }
+    }
+
+    // 용량 포맷팅 (B, KB, MB)
+    private string FormatBytes( long bytes )
+    {
+        if ( bytes == 0 ) return "0 B"; // 0일 때 처리
+
+        string[] suffix = { "B", "KB", "MB", "GB", "TB" };
+        int i;
+        double dblSByte = bytes;
+        for ( i = 0; i < suffix.Length && bytes >= 1024; i++, bytes /= 1024 )
+        {
+            dblSByte = bytes / 1024.0;
+        }
+        return String.Format( "{0:0.##} {1}", dblSByte, suffix[ i ] );
+    }
+
+    private async Task CopyToClipboard( string text )
+    {
+        await JSRuntime.InvokeVoidAsync( "navigator.clipboard.writeText", text );
+    }
+}

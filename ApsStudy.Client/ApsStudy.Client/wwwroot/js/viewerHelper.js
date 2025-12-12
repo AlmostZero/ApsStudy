@@ -1,7 +1,8 @@
-﻿// 전역 변수 2개 선언
+﻿// 전역 변수
 var viewer2D; // 왼쪽
 var viewer3D; // 오른쪽
 var isSyncing = false; // [핵심] 무한 루프 방지용 락(Lock)
+var currentDoc = null; // [신규] 문서 정보 저장용 (시트 찾을 때 사용)
 
 // [메인 함수] 2D/3D 뷰어 동시 실행
 function launchDualViewer(div2dId, div3dId, urn, token) {
@@ -21,7 +22,7 @@ function launchDualViewer(div2dId, div3dId, urn, token) {
     Autodesk.Viewing.Initializer(options, function () {
         console.log("✅ Initializer 성공");
 
-        // 1. 기존 뷰어들 정리 (메모리 누수 방지)
+        // 1. 기존 뷰어들 정리
         if (viewer2D) { viewer2D.finish(); viewer2D = null; }
         if (viewer3D) { viewer3D.finish(); viewer3D = null; }
 
@@ -29,9 +30,10 @@ function launchDualViewer(div2dId, div3dId, urn, token) {
         var div2d = document.getElementById(div2dId);
         var div3d = document.getElementById(div3dId);
 
-        // [설정] 2D용은 가볍게, 3D용은 풀옵션으로
+        // [설정] 2D용은 가볍게
         viewer2D = new Autodesk.Viewing.GuiViewer3D(div2d, { extensions: ['Autodesk.DocumentBrowser'] });
 
+        // [설정] 3D용은 풀옵션
         var config3D = {
             extensions: [
                 'Autodesk.DocumentBrowser', 'Autodesk.AEC.LevelsExtension',
@@ -47,12 +49,11 @@ function launchDualViewer(div2dId, div3dId, urn, token) {
         viewer2D.start();
         viewer3D.start();
 
-        // =======================================================
-        // [신규] 두 뷰어 간의 선택 동기화 (영혼의 파트너 맺기)
-        // =======================================================
-        setupDualSelectionSync(viewer2D, viewer3D);
+        // 4. 기능 연결
+        setupDualSelectionSync(viewer2D, viewer3D); // 동기화
+        setupSpecificAlert(viewer3D); // [형님 요청] 자동 시트 열기 로직
 
-        // 4. 문서 로드 (하나의 URN을 두 뷰어가 공유)
+        // 5. 문서 로드
         var documentId = 'urn:' + urn;
         Autodesk.Viewing.Document.load(documentId, onDualDocumentLoadSuccess, onDocumentLoadFailure);
     });
@@ -61,6 +62,8 @@ function launchDualViewer(div2dId, div3dId, urn, token) {
 // 문서 로드 성공 시 -> 2D/3D 분배 로직
 function onDualDocumentLoadSuccess(doc) {
     console.log('✅ 문서 로드 성공. 뷰 분배 시작...');
+
+    currentDoc = doc; // [중요] 문서 정보를 전역 변수에 저장 (나중에 시트 찾을 때 씀)
 
     // 1. 2D 뷰(Sheet) 찾기
     var items2d = doc.getRoot().search({ 'type': 'geometry', 'role': '2d' });
@@ -73,6 +76,7 @@ function onDualDocumentLoadSuccess(doc) {
         viewer2D.loadDocumentNode(doc, items2d[0]).then(i => {
             console.log('📄 2D 뷰 로드 완료');
             viewer2D.fitToView();
+            setViewerBackgroundWhite(viewer2D); // 배경 흰색 처리
         });
     } else {
         console.warn("⚠️ 이 파일엔 2D 시트가 없습니다.");
@@ -83,7 +87,7 @@ function onDualDocumentLoadSuccess(doc) {
         viewer3D.loadDocumentNode(doc, items3d[0]).then(i => {
             console.log('🧊 3D 뷰 로드 완료');
 
-            // 형님의 3D 풀옵션 설정 적용
+            // 3D 풀옵션 설정
             viewer3D.fitToView();
             viewer3D.navigation.setReverseZoomDirection(true);
             viewer3D.setDisplayEdges(true);
@@ -92,7 +96,7 @@ function onDualDocumentLoadSuccess(doc) {
             viewer3D.setGroundShadow(true);
             viewer3D.setEnvMapBackground(false);
 
-            // 아까 만든 자동 숨김 기능 (3D에만 적용)
+            // 자동 숨김 기능 (3D에만 적용)
             applyAutoHiding(viewer3D);
         });
     } else {
@@ -104,177 +108,226 @@ function onDocumentLoadFailure(code, msg) {
     console.error('❌ 로드 실패: ' + code + ' / ' + msg);
 }
 
-// 리사이즈 대응
-window.addEventListener('resize', function () {
-    if (viewer2D) viewer2D.resize();
-    if (viewer3D) viewer3D.resize();
-});
+// [최종 로직] 3D 객체의 'Assembly Name'을 뽑아서 -> 2D 시트 찾아 열기
+function setupSpecificAlert(viewerInstance) {
+    if (!viewerInstance) return;
 
+    viewerInstance.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, function (event) {
+        if (event.dbIdArray.length === 0) return;
+
+        var dbId = event.dbIdArray[0];
+
+        // 1. 3D 객체의 'Assembly Name' 속성 가져오기
+        viewerInstance.model.getBulkProperties([dbId], null, function (results) {
+            if (results.length === 0) return;
+
+            var item = results[0];
+            var props = item.properties;
+
+            // Name (상위 노드 이름)
+            var nameVal = item.name ? item.name : "";
+
+            // 형님이 원하시던 Property 값 추출
+            var typeProp = props.find(p => p.displayName === 'Type Name');
+            var assemblyProp = props.find(p => p.displayName === 'Assembly Name');
+
+            var typeVal = typeProp ? typeProp.displayValue : "";
+            var assemblyVal = assemblyProp ? assemblyProp.displayValue : "";
+
+            // [조건] Name에 'Direct Shape' 포함 && Type Name이 'JBK_Face_DS' (대소문자 주의)
+            if (nameVal.indexOf("Direct Shape") > -1 && typeVal === "JBK_FACE_DS") {
+
+                console.log("🎯 [조건 일치] 3D Assembly Name: " + assemblyVal);
+
+                if (assemblyVal && assemblyVal !== "값 없음") {
+                    // 찾은 Assembly Name을 들고 시트 찾으러 갑니다
+                    openSheetByAssemblyName(assemblyVal);
+                }
+            }
+        });
+    });
+    console.log("🕵️‍♂️ [Logic] Assembly 연동 준비 완료");
+}
+
+// [최종 수정] 3D Assembly Name과 일치하는 2D 시트 찾기 (에러 수정판)
+function openSheetByAssemblyName(targetName) {
+    if (!currentDoc || !viewer2D) {
+        console.error("❌ 문서나 2D 뷰어가 준비되지 않음");
+        return;
+    }
+
+    console.log("🔍 [Search] 시트 찾는 중... 목표(Assembly Name): " + targetName);
+
+    // 1. 문서 내의 모든 2D 시트(BubbleNode) 가져오기
+    var all2DViews = currentDoc.getRoot().search({ 'type': 'geometry', 'role': '2d' });
+
+    // 2. 시트 목록을 뒤져서 이름 매칭
+    var match = all2DViews.find(function (item) {
+
+        // [형님 요청하신 수정 부분] 
+        // item.name은 상황에 따라 함수일 수도 있고 변수일 수도 있어서 이렇게 안전하게 꺼내야 합니다.
+        var sheetName = "";
+
+        if (typeof item.name === 'function') {
+            sheetName = item.name(); // 함수면 실행 ()
+        } else if (item.data && item.data.name) {
+            sheetName = item.data.name; // 데이터 안에 있으면 꺼냄
+        } else {
+            sheetName = item.name || ""; // 그냥 변수면 가져옴
+        }
+
+        // 이름 없으면 패스
+        if (!sheetName) return false;
+
+        // [비교] 시트 이름 안에 Assembly Name이 들어있는지 확인
+        // (Revit Assembly 시트 이름은 보통 "A101 - [Assembly Name]" 형식이니까 포함 여부로 찾습니다)
+        return sheetName.indexOf(targetName) > -1;
+    });
+
+    if (match) {
+        // 찾은 시트 이름 로그 찍기
+        var foundName = (typeof match.name === 'function' ? match.name() : match.name);
+        console.log("✅ [Found] 시트 발견! (" + foundName + ") -> 로드합니다.");
+
+        // 3. 2D 뷰어에 해당 시트 로드
+        viewer2D.loadDocumentNode(currentDoc, match).then(function () {
+            viewer2D.fitToView();
+
+            // 배경 흰색 처리
+            var ThreeColor = (typeof THREE !== 'undefined' && THREE.Color) ? THREE.Color : Autodesk.Viewing.Private.THREE.Color;
+            try {
+                if (viewer2D.setClearColor) viewer2D.setClearColor(new ThreeColor(0xffffff));
+                else if (viewer2D.impl) viewer2D.impl.setClearColor(new ThreeColor(0xffffff));
+                viewer2D.impl.invalidate(true);
+            } catch (e) { }
+        });
+    } else {
+        console.warn("⚠️ [Not Found] '" + targetName + "' 가 포함된 시트를 찾을 수 없습니다.");
+    }
+}
+
+// [유틸] 뷰어 배경 흰색으로 강제 변경
+function setViewerBackgroundWhite(viewer) {
+    var ThreeColor = (typeof THREE !== 'undefined' && THREE.Color)
+        ? THREE.Color
+        : Autodesk.Viewing.Private.THREE.Color;
+
+    try {
+        if (viewer.setClearColor) {
+            viewer.setClearColor(new ThreeColor(0xffffff));
+        } else if (viewer.impl) {
+            viewer.impl.setClearColor(new ThreeColor(0xffffff));
+        }
+        viewer.impl.invalidate(true);
+    } catch (e) {
+        console.warn("배경색 변경 실패:", e);
+    }
+}
 
 // -------------------------------------------------------------
-// [핵심 기능 수정] 2D <-> 3D 양방향 선택 + 줌인(Fit) 동기화
+// [기존 유지] 2D <-> 3D 양방향 선택 + 줌인(Fit) 동기화
 // -------------------------------------------------------------
 function setupDualSelectionSync(viewer2D, viewer3D) {
     if (!viewer2D || !viewer3D) return;
 
-    // 2D에서 선택 -> 3D 선택 및 줌인
+    // 2D -> 3D
     viewer2D.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, function (event) {
         if (isSyncing) return;
-
-        isSyncing = true; // 락 걸기
-
-        // 1. 3D에서도 똑같은 놈 선택
-        viewer3D.select(event.dbIdArray);
-
-        // 2. [추가] 선택한 놈이 있으면 거기로 카메라 슝~ 이동 (Fit To View)
-        if (event.dbIdArray.length > 0) {
-            viewer3D.fitToView(event.dbIdArray);
-        }
-
-        isSyncing = false; // 락 풀기
-    });
-
-    // 3D에서 선택 -> 2D 선택 및 줌인
-    viewer3D.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, function (event) {
-        if (isSyncing) return;
-
         isSyncing = true;
-
-        // 1. 2D에서도 똑같은 놈 선택
-        viewer2D.select(event.dbIdArray);
-
-        // 2. [추가] 2D 도면에서도 그 부재 위치로 줌인
-        if (event.dbIdArray.length > 0) {
-            viewer2D.fitToView(event.dbIdArray);
-        }
-
+        viewer3D.select(event.dbIdArray);
+        if (event.dbIdArray.length > 0) viewer3D.fitToView(event.dbIdArray);
         isSyncing = false;
     });
 
-    console.log("🔗 [Sync] 뷰어 동기화 (Zoom 포함) 연결 완료");
+    // 3D -> 2D
+    viewer3D.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, function (event) {
+        if (isSyncing) return;
+        isSyncing = true;
+        viewer2D.select(event.dbIdArray);
+        if (event.dbIdArray.length > 0) viewer2D.fitToView(event.dbIdArray);
+        isSyncing = false;
+    });
 }
 
-
-// [자동 숨김 로직]
+// [기존 유지] 자동 숨김 로직
 function applyAutoHiding(viewerInstance) {
     if (!viewerInstance) return;
-
     if (viewerInstance.model.isObjectTreeLoaded()) {
         executeHideLogic(viewerInstance);
     } else {
-        console.log("⏳ [Auto-Hide] 속성 데이터 로딩 대기 중...");
         viewerInstance.addEventListener(Autodesk.Viewing.OBJECT_TREE_CREATED_EVENT, function () {
-            console.log("✅ [Auto-Hide] 속성 데이터 로드 완료! 수색 시작.");
             executeHideLogic(viewerInstance);
         });
     }
 }
 
-// [숨김 실행]
 function executeHideLogic(viewerInstance) {
-    console.log("🕵️‍♂️ [Step 1] 'Direct Shape' 카테고리 수색 시작...");
-
     viewerInstance.search('Direct Shape', function (dbIds) {
-
         if (dbIds.length === 0) {
-            console.warn("⚠️ [Fail] 'Direct Shape' 검색 결과 0개.");
             retrySearchDummy(viewerInstance);
             return;
         }
-
-        console.log("🔎 [Step 2] 1차 후보 발견: " + dbIds.length + "개. 'formwork_dummy' 선별 작업 시작...");
-
         viewerInstance.model.getBulkProperties(dbIds, ['Type Name'], function (results) {
-
             var killList = [];
-
             results.forEach(function (item) {
                 var typeProp = item.properties.find(p => p.displayName === 'Type Name');
                 if (typeProp && typeProp.displayValue === 'formwork_dummy') {
                     killList.push(item.dbId);
                 }
             });
-
-            if (killList.length > 0) {
-                console.log("🚫 [Step 3] 최종 제거 완료: " + killList.length + "개");
-                viewerInstance.hide(killList);
-            } else {
-                console.log("✅ [Pass] 'Direct Shape'는 맞는데 'formwork_dummy'가 아님.");
-            }
+            if (killList.length > 0) viewerInstance.hide(killList);
         });
-
-    }, function (err) {
-        console.error("검색 에러:", err);
-    }, ['Name']);
+    }, null, ['Name']);
 }
 
-// [비상 대책]
 function retrySearchDummy(viewerInstance) {
-    console.log("🔄 [Retry] 'formwork_dummy' 텍스트로 전체 검색 시도...");
-
     viewerInstance.search('formwork_dummy', function (dbIds) {
-        if (dbIds.length > 0) {
-            console.log("🚫 [Retry Success] 'formwork_dummy' 발견 및 제거: " + dbIds.length + "개");
-            viewerInstance.hide(dbIds);
-        } else {
-            console.error("❌ [Final Fail] 진짜 못 찾겠음.");
-        }
+        if (dbIds.length > 0) viewerInstance.hide(dbIds);
     }, null, ['Type Name']);
 }
 
+// [기존 유지] 리사이즈 대응
+window.addEventListener('resize', function () {
+    if (viewer2D) viewer2D.resize();
+    if (viewer3D) viewer3D.resize();
+});
 
-// [신규] 드래그 리사이즈 기능 활성화 함수
+// [기존 유지] 드래그 리사이즈 핸들러
 function enableResizer(leftId, rightId, gutterId) {
     const left = document.getElementById(leftId);
     const right = document.getElementById(rightId);
     const gutter = document.getElementById(gutterId);
-    const container = left.parentElement; // 부모 컨테이너
+    const container = left.parentElement;
 
     if (!left || !right || !gutter || !container) return;
 
     let isDragging = false;
 
-    // 1. 드래그 시작
     gutter.addEventListener('mousedown', function (e) {
         isDragging = true;
-        document.body.style.cursor = 'col-resize'; // 전체 커서 변경
-        e.preventDefault(); // 텍스트 선택 방지
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
     });
 
-    // 2. 드래그 중 (마우스 이동)
     document.addEventListener('mousemove', function (e) {
         if (!isDragging) return;
-
-        // 전체 너비 대비 마우스 위치 비율 계산 (%)
-        // container.getBoundingClientRect().left 는 컨테이너의 시작점
         let containerRect = container.getBoundingClientRect();
         let mouseX = e.clientX - containerRect.left;
-        let totalWidth = containerRect.width;
-
-        // 최소/최대 너비 제한 (10% ~ 90%)
-        let percentage = (mouseX / totalWidth) * 100;
+        let percentage = (mouseX / containerRect.width) * 100;
         if (percentage < 10) percentage = 10;
         if (percentage > 90) percentage = 90;
 
-        // 왼쪽 뷰어 너비 적용
         left.style.width = `${percentage}%`;
-        // 오른쪽 뷰어 너비 적용 (막대기 크기 10px 제외하고 나머지)
-        // flex-grow를 쓰고 있으므로 오른쪽은 width 지정 안 해도 되지만,
-        // 명확하게 하려면 calc 사용
         right.style.width = `calc(${100 - percentage}% - 10px)`;
 
-        // [핵심] 뷰어 엔진에게 "야 창크기 바꼈다 다시 그려!" 명령
-        // (쓰로틀링 없이 실시간으로 하면 부드럽지만 사양을 좀 먹음)
         if (window.viewer2D) window.viewer2D.resize();
         if (window.viewer3D) window.viewer3D.resize();
     });
 
-    // 3. 드래그 끝
     document.addEventListener('mouseup', function () {
         if (isDragging) {
             isDragging = false;
             document.body.style.cursor = 'default';
-            // 마지막으로 한 번 더 리사이즈 확실하게
             if (window.viewer2D) window.viewer2D.resize();
             if (window.viewer3D) window.viewer3D.resize();
         }

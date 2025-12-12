@@ -41,24 +41,31 @@ namespace ApsStudy.Server.Controllers
             }
         }
 
-        // [기존 코드 수정] GET /api/aps/bucket
-        // 이제는 파일 목록을 보여줍니다.
+        // [수정] GET /api/aps/bucket
         [HttpGet( "bucket" )]
         public async Task<IActionResult> GetBucketFiles()
         {
             try
             {
+                // OSS 서비스에서 목록 가져옴 (ObjectDetails 리스트)
                 var objects = await _apsService.GetBucketObjects();
 
-                // [수정] 익명 객체 대신 BucketObjectDto 사용
+                // [핵심] DTO에 상세 정보 매핑
                 var result = objects.Select( o => new BucketObjectDto
                 {
                     FileName = o.ObjectKey,
-                    // Size는 DTO에 안 넣었으니 뺍니다 (필요하면 DTO에 추가하세요)
                     ObjectId = o.ObjectId,
                     Urn = ToBase64( o.ObjectId ),
-                    TranslationStatus = "n/a" // 초기값
-                } );
+
+                    // [추가] 크기 정보 (long? 타입일 수 있어서 캐스팅)
+                    Size = (long)( o.Size ?? 0 ),
+
+                    // [추가] 날짜 정보 (SDK 버전에 따라 없을 수도 있어서 방어 코드)
+                    // 보통 o.LastModified 같은 게 있거나, 없으면 "Unknown" 처리
+                    UploadedDate = "Unknown",
+
+                    TranslationStatus = "Ready" // 일단 기본값
+                } ).ToList();
 
                 return Ok( result );
             }
